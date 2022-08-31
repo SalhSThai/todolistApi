@@ -1,8 +1,10 @@
 const express = require('express');
 const fs = require('fs/promises');
+const {readTodo,writeTodo} = require('./db/file');
 const data = require('./db/todolist.json');
 const uuid = require('uuid')
-const axios = require('axios')
+const axios = require('axios');
+const { json } = require('express');
 const app = express();
 //============================================ Imported ZONE
 //============================================ Encoding ZONE
@@ -29,9 +31,9 @@ app.delete('/products', (req, res) => {
 //============================================ LAB 02
 
 //============================================ GET DATA
-app.get('/todo', (req, res) => {
+app.get('/todos', (req, res) => {
     const { title, completed, dueDate, offset, limit, sort } = req.query;
-    if (!req.query) { fs.readFile('./db/todolist.json', 'utf-8').then(data => res.json(JSON.parse(data))) }
+    if (!req.query) { fs.readFile('./db/todolist.json', 'utf-8').then(data => res.status(200).json(JSON.parse(data))).catch(err=>res.status(500).json({err:err.message})) }
     else {
         let clone = [...data.todos];
         clone = title ? clone.filter(item => item.todos.title === title) : clone;
@@ -44,18 +46,23 @@ app.get('/todo', (req, res) => {
 
     }
 })
-app.get('/todo/:id', (req, res) => {
-    const { id } = req.params;
-    let clone = [...data.todos];
-    clone = id ? clone.find(item => item.todos.id === id) : {};
-    res.json(clone)
-
+app.get('/todos/:id',async (req,res)=>{
+    try {
+        const {id}=req.params;
+        const oldTodos = await readTodo();
+        const todo = oldTodos.todos.find(item=>item.id===id)?? null;
+        res.json({total:todo.lenght,todo});
+    } catch (err) {
+        res.status(500).json({err:err.message})
+    }
 })
 
+
 //============================================ ADD DATA
-app.post('/todo', (req, res) => {
-    const { id, title, completed, dueDate = '01-01-2022' } = req.body
-    const clone = [...data.todos]
+app.post('/todos', (req, res) => {
+    const { id, title, completed, dueDate = '1970-01-01' } = req.body
+    // const obj = [...data.todos]
+
     if (!title || !title.trim()) {
         res.status(400).json({ message: 'title is required' });
     } else if (typeof completed !== 'boolean') {
@@ -63,15 +70,33 @@ app.post('/todo', (req, res) => {
     } else if (dueDate !== undefined && isNaN(new Date(dueDate).getTime())) {
         res.status(400).json({ message: 'invalid due date' });
     } else {
-        const lenght = clone.unshift({ id: uuid.v4(), title, completed, dueDate })
-        fs.writeFile('./db/todolist.json', JSON.stringify({ total: lenght, todos: [...clone] }), 'utf-8')
-        fs.readFile('./db/todolist.json', 'utf-8').then(data => res.status(201).json(JSON.parse(data).todos[0]))
+        const obj = { id: uuid.v4(), title, completed, dueDate }
+        fs.readFile('./db/todolist.json', 'utf-8').then(data => {
+            const clone = [...JSON.parse(data).todos]
+            const lenght = clone.unshift(obj)
+            return fs.writeFile('./db/todolist.json', JSON.stringify({ total: lenght, todos: [...clone] }), 'utf-8')
+        })
+            .then((clone) => {
+                res.status(201).json({ "newData": obj })
+            })
+            .catch(err => {
+                res.status(500).json({ message: err.message })
+            })
     }
 })
 
 //============================================ REMOVE DATA
-app.delete('/todo/:id', (req, res) => {
+app.delete('/todos/:id',async (req, res) => {
     const { id } = req.params;
+    try {        
+        const oldTodos = await readTodo();
+        const newTodos = oldTodos.todos.filter(item=>item.id!==id)
+        await writeTodo(newTodos)
+        res.status(200).json({message:'Success delete'})
+        
+    } catch (err) {
+        res.status(500).json({err:err.message})
+    }
     const clone = [...data.todos];
     const newArr = clone.filter(item => item.id !== id);
     fs.writeFile('./db/todolist.json', JSON.stringify({ total: newArr.length, todos: [...newArr] }), 'utf-8');
@@ -79,15 +104,19 @@ app.delete('/todo/:id', (req, res) => {
 })
 
 //============================================ UPDATE DATA
-app.put('/todo/:id', (req, res) => {
-    const { id } = req.params;
-    const newInfo = req.body;
-    const clone = [...data.todos];
-    const newArr = clone.map(item => item.id === id ? { ...item, ...newInfo } : item)
-    fs.writeFile('./db/todolist.json', JSON.stringify({ total: newArr.length, todos: [...newArr] }), 'utf-8');
-    fs.readFile('./db/todolist.json', 'utf-8').then(data => res.json(JSON.parse(data)));
+app.put('/todos/:id',async (req, res) => {
+    try {
+        const {title,completed,dueDate} = req.body;
+        const {id} = req.params;        
+        const oldTodos = await readTodo();
+        const newTodo = {id,title,completed,dueDate};
+        const mewTodos = oldTodos.todos.map(item=>(item.id===id?newTodo:item))
+        await writeTodo({ total: mewTodos.length, todos: [...mewTodos] })
+        res.status(200).json({update:newTodo})
+    } catch (err) {
+        res.status(500).json({err:err.message})
+    }
 })
 
-
 const PORT = 8000;
-app.listen(PORT, () => { console.log(`[PORT:${PORT}] Server is running...)`) })
+app.listen(PORT, () => { console.log(`[PORT:${PORT}] Server is running...`) })
