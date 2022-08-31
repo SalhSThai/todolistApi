@@ -41,10 +41,11 @@ app.get('/todo', (req, res) => {
         clone = limit ? clone.slice(0, limit) : clone;
         clone = sort ? clone.sort((a, b) => { a > b ? 1 : -1 }) : clone;
         res.json(clone)
+
     }
 })
 app.get('/todo/:id', (req, res) => {
-    const { id } = req.param;
+    const { id } = req.params;
     let clone = [...data.todos];
     clone = id ? clone.find(item => item.todos.id === id) : {};
     res.json(clone)
@@ -55,9 +56,17 @@ app.get('/todo/:id', (req, res) => {
 app.post('/todo', (req, res) => {
     const { id, title, completed, dueDate = '01-01-2022' } = req.body
     const clone = [...data.todos]
-    const lenght = clone.unshift({ id: uuid.v4(), title, completed, dueDate })
-    fs.writeFile('./db/todolist.json', JSON.stringify({ total: lenght, todos: [...clone] }), 'utf-8')
-    fs.readFile('./db/todolist.json', 'utf-8').then(data => res.json(JSON.parse(data).todos[0]))
+    if (!title || !title.trim()) {
+        res.status(400).json({ message: 'title is required' });
+    } else if (typeof completed !== 'boolean') {
+        res.status(400).json({ message: 'completed must be a boolean' });
+    } else if (dueDate !== undefined && isNaN(new Date(dueDate).getTime())) {
+        res.status(400).json({ message: 'invalid due date' });
+    } else {
+        const lenght = clone.unshift({ id: uuid.v4(), title, completed, dueDate })
+        fs.writeFile('./db/todolist.json', JSON.stringify({ total: lenght, todos: [...clone] }), 'utf-8')
+        fs.readFile('./db/todolist.json', 'utf-8').then(data => res.status(201).json(JSON.parse(data).todos[0]))
+    }
 })
 
 //============================================ REMOVE DATA
